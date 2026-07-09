@@ -178,6 +178,28 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  // ---- Admin: change which tools an existing customer's link unlocks ----
+  if (req.method === 'POST' && pathname === '/api/admin/customers/update-tools') {
+    if (!isAdminAuthed(req)) return sendJson(res, 401, { error: 'Unauthorized' });
+    let body;
+    try {
+      body = await readBody(req);
+    } catch (err) {
+      return sendJson(res, 400, { error: 'Invalid JSON body' });
+    }
+    if (!body.token) return sendJson(res, 400, { error: 'token is required' });
+    const tools = Array.isArray(body.tools) ? body.tools.filter((t) => ALL_TOOL_CODES.includes(t)) : [];
+    if (!tools.length) return sendJson(res, 400, { error: 'at least one valid tool is required' });
+    try {
+      const customer = await db.updateCustomerTools(body.token, tools);
+      if (!customer) return sendJson(res, 404, { error: 'Customer not found' });
+      return sendJson(res, 200, { ok: true, customer });
+    } catch (err) {
+      console.error('update customer tools failed:', err);
+      return sendJson(res, 502, { error: 'Failed to update customer', details: String(err.message || err) });
+    }
+  }
+
   // ---- Admin: recent access history ----
   if (req.method === 'GET' && pathname === '/api/admin/access-log') {
     if (!isAdminAuthed(req)) return sendJson(res, 401, { error: 'Unauthorized' });
