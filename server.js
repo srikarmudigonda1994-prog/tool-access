@@ -200,6 +200,36 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  // ---- Admin: grant a real lead access to specific tools ----
+  // This is the primary workflow: search the real leads list, pick
+  // someone who actually used a tool, choose what to unlock for them,
+  // and get back one shareable link. Matched and re-usable by email -
+  // granting access again to the same email updates their existing link
+  // instead of creating a duplicate one.
+  if (req.method === 'POST' && pathname === '/api/admin/grant-access') {
+    if (!isAdminAuthed(req)) return sendJson(res, 401, { error: 'Unauthorized' });
+    let body;
+    try {
+      body = await readBody(req);
+    } catch (err) {
+      return sendJson(res, 400, { error: 'Invalid JSON body' });
+    }
+    const name = (body.name || '').trim();
+    const email = (body.email || '').trim();
+    const phone = (body.phone || '').trim();
+    const tools = Array.isArray(body.tools) ? body.tools.filter((t) => ALL_TOOL_CODES.includes(t)) : [];
+    if (!name) return sendJson(res, 400, { error: 'name is required' });
+    if (!email) return sendJson(res, 400, { error: 'email is required' });
+    if (!tools.length) return sendJson(res, 400, { error: 'at least one valid tool is required' });
+    try {
+      const result = await db.upsertCustomerAccess({ name, email, phone, tools });
+      return sendJson(res, 200, { ok: true, customer: result.customer, isNew: result.isNew });
+    } catch (err) {
+      console.error('grant-access failed:', err);
+      return sendJson(res, 502, { error: 'Failed to grant access', details: String(err.message || err) });
+    }
+  }
+
   // ---- Admin: recent access history ----
   if (req.method === 'GET' && pathname === '/api/admin/access-log') {
     if (!isAdminAuthed(req)) return sendJson(res, 401, { error: 'Unauthorized' });
