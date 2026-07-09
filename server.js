@@ -1,6 +1,6 @@
 const http = require('http');
 const { generateReportPdf } = require('./lib/generateReportPdf');
-const { sendReportEmail } = require('./lib/email');
+const { sendReportEmail, sendAccessLinkEmail } = require('./lib/email');
 const db = require('./lib/db');
 
 const PORT = process.env.PORT || 3000;
@@ -8,6 +8,11 @@ const PORT = process.env.PORT || 3000;
 // Allow your published calculator page's origin to call this API.
 // Set this to your actual domain once deployed, e.g. "https://profill.mx"
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || '*';
+
+// Used to build the full https://.../?access=TOKEN link when emailing
+// customers their access automatically. Falls back to ALLOWED_ORIGIN if
+// not set separately, since that's usually the same URL anyway.
+const SITE_URL = process.env.SITE_URL || (ALLOWED_ORIGIN !== '*' ? ALLOWED_ORIGIN : '');
 
 const ALL_TOOL_CODES = ['dueno', 'prod', 'manto', 'fin', 'compras', 'oper'];
 
@@ -223,7 +228,23 @@ const server = http.createServer(async (req, res) => {
     if (!tools.length) return sendJson(res, 400, { error: 'at least one valid tool is required' });
     try {
       const result = await db.upsertCustomerAccess({ name, email, phone, tools });
-      return sendJson(res, 200, { ok: true, customer: result.customer, isNew: result.isNew });
+
+      let emailSent = false;
+      let emailError = null;
+      if (SITE_URL) {
+        const link = `${SITE_URL}/?access=${result.customer.token}`;
+        try {
+          await sendAccessLinkEmail({ toEmail: email, name, link, tools, lang: body.lang });
+          emailSent = true;
+        } catch (err) {
+          console.error('sendAccessLinkEmail failed (non-fatal, access was still granted):', err.message);
+          emailError = err.message;
+        }
+      } else {
+        emailError = 'SITE_URL not configured on the backend - link was generated but not emailed';
+      }
+
+      return sendJson(res, 200, { ok: true, customer: result.customer, isNew: result.isNew, emailSent, emailError });
     } catch (err) {
       console.error('grant-access failed:', err);
       return sendJson(res, 502, { error: 'Failed to grant access', details: String(err.message || err) });
