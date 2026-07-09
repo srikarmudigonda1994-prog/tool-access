@@ -190,6 +190,18 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  // ---- Admin: every lead from every tool, regardless of access method ----
+  if (req.method === 'GET' && pathname === '/api/admin/leads') {
+    if (!isAdminAuthed(req)) return sendJson(res, 401, { error: 'Unauthorized' });
+    try {
+      const leads = await db.getLeads(300);
+      return sendJson(res, 200, { leads });
+    } catch (err) {
+      console.error('leads fetch failed:', err);
+      return sendJson(res, 502, { error: 'Failed to load leads', details: String(err.message || err) });
+    }
+  }
+
   // ---- Email the PDF report to the visitor (works for any of the 6 tools) ----
   if (req.method === 'POST' && pathname === '/api/send-report') {
     let body;
@@ -203,6 +215,18 @@ const server = http.createServer(async (req, res) => {
     if (errors.length) {
       return sendJson(res, 400, { error: 'Validation failed', details: errors });
     }
+
+    // Log this as a lead regardless of what happens next (DRY_RUN, email
+    // success or failure) - the fact that someone submitted the form is
+    // what matters here. Failure to log never blocks the actual response.
+    db.logLead({
+      toolCode: body.tool,
+      name: (body.name || '').trim(),
+      email: body.email,
+      phone: body.phone,
+      lang: body.lang,
+      verdict: body.verdict,
+    }).catch((err) => console.error('logLead failed (non-fatal):', err.message));
 
     try {
       const pdfBuffer = await generateReportPdf(body);
