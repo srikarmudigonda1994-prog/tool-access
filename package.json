@@ -1,0 +1,16 @@
+{
+  "name": "roi-report-backend",
+  "version": "1.0.0",
+  "description": "Backend that generates PDF reports, emails them via Brevo, and manages per-customer tool access.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "pdf-lib": "^1.17.1",
+    "pg": "^8.11.5"
+  }
+}
